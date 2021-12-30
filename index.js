@@ -175,9 +175,9 @@ class EasyYandexS3 {
 
     try {
       const uploadResult = await this.s3.upload(params).promise();
-      this._debugLog('S3', debug_object, 'done:', s3Promise);
+      this._debugLog('S3', debug_object, 'done:', uploadResult);
 
-      return s3Promise;
+      return uploadResult;
     } catch (error) {
       this._debugLog('S3', debug_object, 'error:', error.message);
 
