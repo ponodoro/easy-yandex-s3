@@ -153,7 +153,7 @@ class EasyYandexS3 {
       route = route.slice(1);
     };
 
-    fileMD5 = md5(file_body);
+    fileMD5 = md5(fileBody);
     if (!fileUploadName) {
       fileUploadName = `${fileMD5}${fileExt}`;
     };
