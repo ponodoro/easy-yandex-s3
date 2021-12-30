@@ -5,6 +5,7 @@ const path = require('path');
 const fileType = require('file-type');
 const mime = require('mime-types');
 const uniqid = require('uniqid');
+const { IoTFleetHub } = require('aws-sdk');
 
 /**
  * Создание объекта для работы с S3 хранилищем
@@ -55,10 +56,15 @@ class EasyYandexS3 {
     this.default_ignore_list = ['.DS_Store'];
   };
 
+  _debugLog() {
+    if (debug) {
+      this._log(...arguments);
+    };
+  };
 
   _log() {
     return console.log('[' + (new Date().toUTCString()) + '] ', ...arguments)
-  }
+  };
 
 
   /**
@@ -76,85 +82,105 @@ class EasyYandexS3 {
    * @returns {Promise<Object>} Результат загрузки
    */
   async Upload(file, route) {
-    let file_body;
-    let file_ext;
-    let file_md5;
-    let file_upload_name;
+    let fileBody;
+    let fileExt;
+    let fileMD5;
+    let fileUploadName;
 
-    let debug = this.debug;
-    let debug_object = 'upload';
+    const debug = this.debug;
+    const debug_object = 'upload';
 
     if (Array.isArray(file)) {
-      let files = file;
-      if (files.length == 0) throw 'file array is empty';
-      if (debug) this._log('S3', debug_object, 'array to upload:', files.length);
-      let u = await this._uploadArray(files, route);
-      if (debug) this._log('S3', debug_object, 'array upload done', u.length, 'files');
-      return u;
+      if (file.length == 0) {
+        throw 'file array is empty';
+      };
+
+      this._debugLog('S3', debug_object, 'array to upload:', file.length);
+
+      const uploadResult = await this._uploadArray(file, route);
+      this._debugLog('S3', debug_object, 'array upload done', uploadResult.length, 'files');
+
+      return uploadResult;
     }
 
     if (file.path) {
-      file.path = path.join(file.path);
+      const path = path.join(file.path);
 
-      if (!fs.existsSync(file.path)) throw 'file/directory on path is not found (' + file.path + ')';
-      if (!route) throw 'route (2nd argument) is not defined';
+      if (!fs.existsSync(path)) { 
+        throw `file/directory on path is not found (${path})`; 
+      };
+      if (!route) { 
+        throw 'route (2nd argument) is not defined'; 
+      };
 
-      if (fs.lstatSync(file.path).isDirectory()) {
-        let dir_path = file.path;
-        if (!fs.lstatSync(dir_path).isDirectory()) throw 'directory on path is not found (' + dir_path + ')';
-        if (debug) this._log('S3', debug_object, 'folder to upload found', file.path);
-        if (!file.ignore) file.ignore = [];
-        let ignore_list = [...this.default_ignore_list, ...file.ignore]
-        let u = await this._uploadDirectory(dir_path, file, route, ignore_list);
-        if (debug) this._log('S3', debug_object, 'folder upload done', u.length, 'files');
-        return u;
+      if (fs.lstatSync(path).isDirectory()) {
+        this._debugLog('S3', debug_object, 'folder to upload found', path);
+        if (!file.ignore) {
+          file.ignore = [];
+        };
+
+        const ignoreList = [...this.default_ignore_list, ...file.ignore]
+        const uploadResult = await this._uploadDirectory(path, file, route, ignoreList);
+
+        this._debugLog('S3', debug_object, 'folder upload done', u.length, 'files');
+        return uploadResult;
       }
-    }
-
-    if (file.path) {
-      file_body = fs.readFileSync(file.path);
-      file_ext = path.extname(file.path);
-      if (file.save_name) file_upload_name = path.basename(file.path);
-      if (file.name) file_upload_name = file.name;
+      
+      fileBody = fs.readFileSync(file.path);
+      fileExt = path.extname(file.path);
+      if (file.saveName) {
+        fileUploadName = path.basename(file.path);
+      };
+      if (file.name) {
+        fileUploadName = file.name;
+      };
     } else {
-      file_body = file.buffer;
+      fileBody = file.buffer;
       try {
-        file_ext = '.' + fileExt(file);
+        fileExt = `.${fileExt(file)}`;
       } catch (error) {
-        if (debug) this._log('S3', debug_object, 'error:', error);
-      }
-      if (file.name) file_upload_name = file.name;
-    }
+        this._debugLog('S3', debug_object, 'error:', error.message);
+      };
+      if (file.name) {
+        fileUploadName = file.name;
+      };
+    };
 
-    if (route.slice(-1) != '/') route += '/';
-    if (route[0] == '/') route = route.slice(1);
+    if (route.slice(-1) != '/') {
+      route += '/';
+    };
+    if (route[0] == '/') {
+      route = route.slice(1);
+    };
 
-    file_md5 = md5(file_body);
-    if (!file_upload_name) file_upload_name = `${file_md5}${file_ext}`;
+    fileMD5 = md5(file_body);
+    if (!fileUploadName) {
+      fileUploadName = `${fileMD5}${fileExt}`;
+    };
 
-    let upload_route = route;
-    let Key = `${upload_route}${file_upload_name}`;
-    let Body = file_body;
+    let Key = `${route}${fileUploadName}`;
+    let Body = fileBody;
 
-    let s3 = this.s3;
     let Bucket = this.Bucket;
-    let ContentType = mime.lookup(file_upload_name) || 'text/plain';
-    let params = { Bucket, Key, Body, ContentType }
+    let ContentType = mime.lookup(fileUploadName) || 'text/plain';
+    const params = { 
+      Bucket, 
+      Key, 
+      Body, 
+      ContentType,
+    };
 
-    if (debug) this._log('S3', debug_object, 'started');
-    if (debug) this._log('S3', debug_object, params);
+    this._debugLog('S3', debug_object, 'started');
+    this._debugLog('S3', debug_object, params);
 
     try {
-      let s3Promise = await new Promise(function (resolve, reject) {
-        s3.upload(params, function (err, data) {
-          if (err) return reject(err);
-          return resolve(data);
-        });
-      });
-      if (debug) this._log('S3', debug_object, 'done:', s3Promise);
+      const uploadResult = await this.s3.upload(params).promise();
+      this._debugLog('S3', debug_object, 'done:', s3Promise);
+
       return s3Promise;
     } catch (error) {
-      if (debug) this._log('S3', debug_object, 'error:', error);
+      this._debugLog('S3', debug_object, 'error:', error.message);
+
       return false;
     }
   };
